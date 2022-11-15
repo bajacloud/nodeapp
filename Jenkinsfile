@@ -40,4 +40,18 @@ node {
             app.push("latest")
         }
     }
+
+    stage('Get Jenkins scans') {
+        withCredentials([usernamePassword(credentialsId: 'twistlock_creds', passwordVariable: 'TL_PASS', usernameVariable: 'TL_USER')]) {
+            sh 'curl -s -k -u $TL_USER:$TL_PASS https://$TL_CONSOLE/api/v1/scans?type=jenkins |  jq --raw-output \'.[] | select(.pass==true) | [.jobName, .build, .info.id] | @csv\' | tr -d \\\" > jenkins_ids.csv'
+        }
+    }
+    
+    stage('Push Trusted images') {
+        withCredentials([usernamePassword(credentialsId: 'twistlock_creds', passwordVariable: 'TL_PASS', usernameVariable: 'TL_USER')]) {
+            sh '''        while IFS=, read -r "jobName" "build" "id"; do
+                curl -s -k -u $TL_USER:$TL_PASS https://$TL_CONSOLE/api/v1/trust -X POST -H "Content-Type:application/json" -v -d "{\\\"image\\\":\\\"${id}\\\", \\\"_id\\\":\\\"Jenkins: ${jobName} Build ${build} \\\"}"
+                done <jenkins_ids.csv
+               '''
+        }
 }
